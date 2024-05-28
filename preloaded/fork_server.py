@@ -2,14 +2,16 @@
 fork server method
 """
 
-from typing import Optional, List, Tuple, BinaryIO
-import os
-import socket
-import sys
-import fcntl
-import termios
 import array
+import fcntl
+import os
 import select
+import socket
+import struct
+import sys
+import termios
+from typing import BinaryIO, List, Optional, Tuple
+
 from . import _io, utils
 
 
@@ -19,28 +21,50 @@ def child_main(*, sock: socket.socket):
     _io.write_str(c2p_w, os.getcwd())
     _io.write_str_array(c2p_w, sys.argv)
 
-    print(f"Python-preloaded fork-server child main, pid {os.getpid()}", file=sys.stderr)
-    print("Open new PTY", file=sys.stderr)
+    # print(
+    #     f"Python-preloaded fork-server child main, pid {os.getpid()}", file=sys.stderr
+    # )
+    # print("Open new PTY", file=sys.stderr)
     master_fd, slave_fd = os.openpty()
-    print("Send PTY fd to server", file=sys.stderr)
+    # print("Send PTY fd to server", file=sys.stderr)
     _send_fds(sock, b"pty", [slave_fd])
-    print("Wait for server to be ready", file=sys.stderr)
+    # print("Wait for server to be ready", file=sys.stderr)
     _io.read_expected(p2c_r, b"ok")
-    print("Entering PTY proxy loop", file=sys.stderr)
+    # print("Entering PTY proxy loop", file=sys.stderr)
     os.close(slave_fd)
 
     tcattr = termios.tcgetattr(0)
     orig_tcattr = tcattr.copy()
     try:
         # TTY raw mode (cfmakeraw)
-        tcattr[0] &= ~(termios.IGNBRK | termios.BRKINT | termios.IGNPAR | termios.PARMRK | termios.INPCK |
-                       termios.ISTRIP | termios.INLCR | termios.IGNCR | termios.ICRNL | termios.IXON |
-                       termios.IXANY | termios.IXOFF)
+        tcattr[0] &= ~(
+            termios.IGNBRK
+            | termios.BRKINT
+            | termios.IGNPAR
+            | termios.PARMRK
+            | termios.INPCK
+            | termios.ISTRIP
+            | termios.INLCR
+            | termios.IGNCR
+            | termios.ICRNL
+            | termios.IXON
+            | termios.IXANY
+            | termios.IXOFF
+        )
         tcattr[1] &= ~termios.OPOST
         tcattr[2] &= ~(termios.PARENB | termios.CSIZE)
         tcattr[2] |= termios.CS8
-        tcattr[3] &= ~(termios.ECHO | termios.ECHOE | termios.ECHOK | termios.ECHONL | termios.ICANON |
-                       termios.IEXTEN | termios.ISIG | termios.NOFLSH | termios.TOSTOP)
+        tcattr[3] &= ~(
+            termios.ECHO
+            | termios.ECHOE
+            | termios.ECHOK
+            | termios.ECHONL
+            | termios.ICANON
+            | termios.IEXTEN
+            | termios.ISIG
+            | termios.NOFLSH
+            | termios.TOSTOP
+        )
         tcattr[6][termios.VMIN] = 1
         tcattr[6][termios.VTIME] = 0
         termios.tcsetattr(0, termios.TCSANOW, tcattr)
@@ -71,7 +95,13 @@ def child_main(*, sock: socket.socket):
     sys.exit()
 
 
-def server_main(*, sock: socket.socket, modules: List[str], file_prefix: str, signal_ready: Optional[BinaryIO] = None):
+def server_main(
+    *,
+    sock: socket.socket,
+    modules: List[str],
+    file_prefix: str,
+    signal_ready: Optional[BinaryIO] = None,
+):
     """server for fork-server"""
     server_preload(modules=modules)
 
@@ -85,7 +115,9 @@ def server_main(*, sock: socket.socket, modules: List[str], file_prefix: str, si
     os.close(0)
     os.dup2(os.open(file_prefix + ".stdout", os.O_CREAT | os.O_APPEND | os.O_WRONLY), 1)
     os.dup2(os.open(file_prefix + ".stderr", os.O_CREAT | os.O_APPEND | os.O_WRONLY), 2)
-    print(f"Python-preloaded fork-server server main, pid {os.getpid()}", file=sys.stderr)
+    # print(
+    #     f"Python-preloaded fork-server server main, pid {os.getpid()}", file=sys.stderr
+    # )
 
     if signal_ready:
         signal_ready.write(b"ready")
@@ -108,7 +140,7 @@ def server_preload(*, modules: List[str]):
     import importlib
 
     for mod_name in modules:
-        print("Import module:", mod_name)
+        # print("Import module:", mod_name)
         importlib.import_module(mod_name)
 
 
@@ -117,11 +149,11 @@ def server_handle_child(conn: socket.socket):
     c2p_r, p2c_w = conn.makefile("rb", buffering=0), conn.makefile("wb", buffering=0)
     cwd = _io.read_str(c2p_r)
     args = _io.read_str_array(c2p_r)
-    print("Handle child:", args, file=sys.stderr)
+    # print("Handle child:", args, file=sys.stderr)
 
     msg, (slave_fd,) = _recv_fds(conn, msglen=3, maxfds=1)
     assert msg == b"pty"
-    print("Got PTY fd from client", file=sys.stderr)
+    # print("Got PTY fd from client", file=sys.stderr)
     os.set_inheritable(slave_fd, True)
     p2c_w.write(b"ok")
     p2c_w.flush()
@@ -133,6 +165,12 @@ def server_handle_child(conn: socket.socket):
     if pid == 0:  # child:
         os.setsid()
         fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 1)
+
+        # Resize child terminal
+        win_size = struct.pack("HHHH", 50, 200, 0, 0)
+
+        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, win_size)
+
         os.dup2(slave_fd, 0)
         os.dup2(slave_fd, 1)
         os.dup2(slave_fd, 2)
@@ -148,16 +186,22 @@ def server_handle_child(conn: socket.socket):
 
 
 def _send_fds(sock: socket.socket, msg: bytes, fds: List[int]):
-    res = sock.sendmsg([msg], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", fds))])
+    res = sock.sendmsg(
+        [msg], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", fds))]
+    )
     assert res == len(msg), f"sendmsg failed: {res} != {len(msg)}"
 
 
 def _recv_fds(sock: socket.socket, msglen: int, maxfds: int) -> Tuple[bytes, List[int]]:
-    fds = array.array("i")   # Array of ints
-    msg, ancdata, flags, addr = sock.recvmsg(msglen, socket.CMSG_LEN(maxfds * fds.itemsize))
-    assert msg and ancdata, f"recvmsg failed, got msg {msg!r}, ancdata {ancdata!r}, flags {flags!r}, addr {addr!r}"
+    fds = array.array("i")  # Array of ints
+    msg, ancdata, flags, addr = sock.recvmsg(
+        msglen, socket.CMSG_LEN(maxfds * fds.itemsize)
+    )
+    assert (
+        msg and ancdata
+    ), f"recvmsg failed, got msg {msg!r}, ancdata {ancdata!r}, flags {flags!r}, addr {addr!r}"
     for cmsg_level, cmsg_type, cmsg_data in ancdata:
         if cmsg_level == socket.SOL_SOCKET and cmsg_type == socket.SCM_RIGHTS:
             # Append data, ignoring any truncated integers at the end.
-            fds.frombytes(cmsg_data[:len(cmsg_data) - (len(cmsg_data) % fds.itemsize)])
+            fds.frombytes(cmsg_data[: len(cmsg_data) - (len(cmsg_data) % fds.itemsize)])
     return msg, list(fds)

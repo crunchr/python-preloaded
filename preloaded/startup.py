@@ -63,15 +63,15 @@ def startup_via_fork_server(*, modules: List[str]):
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sock.connect(sock_name)
         except socket.error as exc:
-            print("Existing socket but can not connect:", exc, file=sys.stderr)
+            # print("Existing socket but can not connect:", exc, file=sys.stderr)
             os.unlink(sock_name)
         else:
-            print("Existing socket, connected", file=sys.stderr)
+            # print("Existing socket, connected", file=sys.stderr)
             fork_server.child_main(sock=sock)
             return
 
     # Socket not found or cannot connect, start server in new process.
-    print("Starting fork server", file=sys.stderr)
+    # print("Starting fork server", file=sys.stderr)
     c2p_r, c2p_w = os.pipe()
     os.set_inheritable(c2p_w, True)
     pid = os.fork()
@@ -92,11 +92,11 @@ def startup_via_fork_server(*, modules: List[str]):
 
     # parent
     os.close(c2p_w)
-    print("Waiting for fork server", file=sys.stderr)
+    # print("Waiting for fork server", file=sys.stderr)
     server_signal_ready = os.fdopen(c2p_r, "rb")
     _io.read_expected(server_signal_ready, b"ready")
-    print("Connecting to fork server", file=sys.stderr)
+    # print("Connecting to fork server", file=sys.stderr)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(sock_name)
-    print("Connected", file=sys.stderr)
+    # print("Connected", file=sys.stderr)
     fork_server.child_main(sock=sock)
