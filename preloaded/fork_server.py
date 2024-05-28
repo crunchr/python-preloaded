@@ -103,6 +103,8 @@ def server_main(
     signal_ready: Optional[BinaryIO] = None,
 ):
     """server for fork-server"""
+    print("Starting server...")
+
     server_preload(modules=modules)
 
     # See docs/pty-details.md for some background.
